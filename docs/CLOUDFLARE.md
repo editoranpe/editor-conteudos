@@ -8,10 +8,11 @@ Pré-requisitos: Node.js 22 ou superior compatível com a versão do Wrangler in
 npm ci
 npx wrangler login
 npx wrangler d1 create editor-conteudos-npe
-npx wrangler r2 bucket create editor-conteudos-npe-arquivos
 ```
 
-Copie o ID retornado pelo primeiro comando de criação para `d1_databases[0].database_id` em `wrangler.jsonc`. Não crie outro banco se já existir um com os dados desta instalação.
+O bucket R2 será criado automaticamente no deploy caso ainda não exista, com o nome `editor-conteudos-npe-arquivos` e a vinculação `FILES` já declarados no código. O Wrangler também reutiliza o bucket existente com esse nome. Não é necessário criar o bucket ou sua vinculação manualmente. O serviço R2 precisa estar habilitado na conta Cloudflare e o token do build precisa permitir editar R2.
+
+Copie o ID retornado pelo comando de criação do D1 para `d1_databases[0].database_id` em `wrangler.jsonc`. Não crie outro banco se já existir um com os dados desta instalação.
 
 ## 2. Configurar login
 
@@ -30,13 +31,13 @@ Proteja o domínio definitivo e também qualquer endereço workers.dev ou de pre
 
 ## 3. Criar tabelas e publicar automaticamente
 
-Depois de criar o banco D1 e o bucket R2 e configurar seus bindings, publique com:
+Depois de configurar o banco D1 existente e habilitar R2 na conta, publique com:
 
 ```bash
 npm run deploy
 ```
 
-Esse comando compila a interface e o Worker, aplica as migrações pendentes no D1 remoto e publica o Worker, nessa ordem. Se a compilação ou a migração falhar, a etapa seguinte não executa. As tabelas são criadas pelo arquivo de migração na primeira implantação. O Wrangler registra migrações aplicadas para que não sejam executadas novamente em cada deploy. Mudanças futuras na estrutura devem entrar como novos arquivos SQL, preservando migrações já aplicadas.
+Esse comando compila a interface e o Worker, aplica as migrações pendentes no D1 remoto e publica o Worker. Na publicação, o provisionamento automático do Wrangler (`--x-provision`) cria o bucket R2 configurado caso ele ainda não exista, ou reutiliza o bucket existente, e o vincula como `FILES`. Se a compilação ou a migração falhar, a etapa seguinte não executa. As tabelas são criadas pelo arquivo de migração na primeira implantação. O Wrangler registra migrações aplicadas para que não sejam executadas novamente em cada deploy. Mudanças futuras na estrutura devem entrar como novos arquivos SQL, preservando migrações já aplicadas.
 
 Na integração com o GitHub, configure no Cloudflare:
 
@@ -51,7 +52,7 @@ O comando de produção aplica o banco e publica sem repetir a compilação feit
 
 Para builds de branches de teste, não execute `deploy:cloudflare` contra o banco de produção. Use recursos isolados de teste. Enquanto não houver ambiente de teste separado, limite as branches de teste a `npm run build`, sem aplicar migrações remotas.
 
-O banco D1 e o bucket R2 precisam existir antes desse comando. A automação cria e atualiza as tabelas dentro do banco existente; não cria a conta, o banco, o bucket nem a configuração de autenticação. O build vai para `dist`, e o Worker atende a interface e as rotas `/api/*`.
+O banco D1 já identificado em `wrangler.jsonc` precisa existir antes desse comando. A automação cria e atualiza as tabelas nesse banco e providencia o bucket R2 privado. Ela não habilita o serviço R2, não aceita termos de contratação e não configura a autenticação da conta. Se faltar habilitação ou permissão de acesso ao R2, a publicação interrompe com erro. O build vai para `dist`, e o Worker atende a interface e as rotas `/api/*`.
 
 ## 4. Configurar o n8n
 
@@ -77,3 +78,9 @@ Defina uma rotina de backup/exportação do D1 e retenção do R2 antes do uso c
 - https://developers.cloudflare.com/workers/wrangler/configuration/
 - https://developers.cloudflare.com/d1/reference/migrations/
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+
+## Provisionamento automático do R2
+
+A criação remota do bucket depende de uma implantação autenticada na conta Cloudflare. O comando de teste `wrangler deploy --dry-run --x-provision` valida o empacotamento, mas não cria recursos remotos. O bucket continua privado por padrão; os arquivos são acessados pela API autenticada do aplicativo.
+
+Referência: https://developers.cloudflare.com/changelog/post/2025-10-24-automatic-resource-provisioning/
