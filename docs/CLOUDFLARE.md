@@ -28,17 +28,30 @@ Não use e-mails ilustrativos como administradores reais. Os demais membros entr
 
 Proteja o domínio definitivo e também qualquer endereço workers.dev ou de preview que permaneça acessível. Mesmo sem Access em um endereço alternativo, a API valida o JWT e recusa requisições sem sessão.
 
-## 3. Aplicar o banco e publicar
+## 3. Criar tabelas e publicar automaticamente
+
+Depois de criar o banco D1 e o bucket R2 e configurar seus bindings, publique com:
 
 ```bash
-npm run build
-npm run db:remote
-npx wrangler deploy
+npm run deploy
 ```
 
-O build vai para `dist`. O Worker serve a interface e atende `/api/*`. O comando `npm run deploy` também compila antes de publicar, mas não aplica migrações automaticamente. Na primeira instalação aplique as migrações antes do deploy.
+Esse comando compila a interface e o Worker, aplica as migrações pendentes no D1 remoto e publica o Worker, nessa ordem. Se a compilação ou a migração falhar, a etapa seguinte não executa. As tabelas são criadas pelo arquivo de migração na primeira implantação. O Wrangler registra migrações aplicadas para que não sejam executadas novamente em cada deploy. Mudanças futuras na estrutura devem entrar como novos arquivos SQL, preservando migrações já aplicadas.
 
-Para integração contínua, conecte este repositório na conta Cloudflare e configure o build `npm run build` e o deploy `npx wrangler deploy`. Faça o provisionamento e as migrações de produção como etapa separada e controlada antes de publicar versões que alterem o esquema.
+Na integração com o GitHub, configure no Cloudflare:
+
+| Campo | Valor |
+| --- | --- |
+| Branch de produção | main |
+| Diretório raiz | / |
+| Comando de build | npm run build |
+| Comando de implantação de produção | npm run deploy:cloudflare |
+
+O comando de produção aplica o banco e publica sem repetir a compilação feita na etapa anterior. Não use apenas `npx wrangler deploy` como comando de produção, pois isso não aplica as migrações. O token usado pelo Workers Builds precisa de permissão de edição do D1 deste projeto, além das permissões dos demais recursos utilizados.
+
+Para builds de branches de teste, não execute `deploy:cloudflare` contra o banco de produção. Use recursos isolados de teste. Enquanto não houver ambiente de teste separado, limite as branches de teste a `npm run build`, sem aplicar migrações remotas.
+
+O banco D1 e o bucket R2 precisam existir antes desse comando. A automação cria e atualiza as tabelas dentro do banco existente; não cria a conta, o banco, o bucket nem a configuração de autenticação. O build vai para `dist`, e o Worker atende a interface e as rotas `/api/*`.
 
 ## 4. Configurar o n8n
 
