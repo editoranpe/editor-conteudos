@@ -14,7 +14,7 @@
     {
       "binding": "DB",
       "database_name": "editor-conteudos-npe",
-      "database_id": "SUBSTITUA_PELO_ID_DO_D1",
+      "database_id": "4fd5b99d-1477-44b4-b831-8c0317e67590",
       "migrations_dir": "migrations",
     },
   ],
