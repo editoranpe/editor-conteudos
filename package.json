@@ -9,9 +9,10 @@
     "test": "vitest run",
     "preview": "vite preview --host 0.0.0.0",
     "dev:cloudflare": "wrangler dev",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && npm run deploy:cloudflare",
     "db:local": "wrangler d1 migrations apply editor-conteudos-npe --local",
-    "db:remote": "wrangler d1 migrations apply editor-conteudos-npe --remote"
+    "db:remote": "wrangler d1 migrations apply editor-conteudos-npe --remote",
+    "deploy:cloudflare": "npm run db:remote && wrangler deploy"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
