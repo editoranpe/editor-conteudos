@@ -1,0 +1,86 @@
+# Publicar na sua conta Cloudflare
+
+Pré-requisitos: Node.js 22 ou superior compatível com a versão do Wrangler instalada, conta Cloudflare com Workers, D1, R2, Workers AI e Cloudflare Access disponíveis. O R2 ou outros serviços podem exigir habilitação e cobrança na conta. Não há credenciais incluídas no projeto.
+
+## 1. Preparar
+
+```bash
+npm ci
+npx wrangler login
+npx wrangler d1 create editor-conteudos-npe
+```
+
+O bucket R2 será criado automaticamente no deploy caso ainda não exista, com o nome `editor-conteudos-npe-arquivos` e a vinculação `FILES` já declarados no código. O Wrangler também reutiliza o bucket existente com esse nome. Não é necessário criar o bucket ou sua vinculação manualmente. O serviço R2 precisa estar habilitado na conta Cloudflare e o token do build precisa permitir editar R2.
+
+Copie o ID retornado pelo comando de criação do D1 para `d1_databases[0].database_id` em `wrangler.jsonc`. Não crie outro banco se já existir um com os dados desta instalação.
+
+## 2. Configurar login
+
+No Cloudflare Zero Trust, crie uma aplicação Access do tipo Self-hosted para o endereço onde o sistema será publicado. Autorize somente os e-mails de Jeff, Gi e da equipe, com o método de login desejado, como código por e-mail.
+
+Preencha as variáveis em `wrangler.jsonc` ou nas configurações de implantação:
+
+- `ACCESS_TEAM_DOMAIN`: URL da equipe Access, como `https://sua-equipe.cloudflareaccess.com`.
+- `ACCESS_AUD`: audiência da aplicação criada no Access.
+- `ADMIN_EMAILS`: e-mails dos administradores separados por vírgula. Essa lista provisiona administradores apenas no primeiro acesso; as mudanças posteriores são feitas na tela Equipe.
+- `AI_MODEL`: modelo de texto disponível no catálogo Workers AI da conta. O modelo no exemplo deve ser verificado antes da publicação.
+
+Não use e-mails ilustrativos como administradores reais. Os demais membros entram pendentes e são liberados pela equipe administradora após o primeiro login. O servidor valida a assinatura, emissor, audiência e expiração do JWT. Sem configuração válida, a API permanece bloqueada. Não há login de desenvolvimento que dispense essa validação.
+
+Proteja o domínio definitivo e também qualquer endereço workers.dev ou de preview que permaneça acessível. Mesmo sem Access em um endereço alternativo, a API valida o JWT e recusa requisições sem sessão.
+
+## 3. Criar tabelas e publicar automaticamente
+
+Depois de configurar o banco D1 existente e habilitar R2 na conta, publique com:
+
+```bash
+npm run deploy
+```
+
+Esse comando compila a interface e o Worker, aplica as migrações pendentes no D1 remoto e publica o Worker. Na publicação, o provisionamento automático do Wrangler (`--x-provision`) cria o bucket R2 configurado caso ele ainda não exista, ou reutiliza o bucket existente, e o vincula como `FILES`. Se a compilação ou a migração falhar, a etapa seguinte não executa. As tabelas são criadas pelo arquivo de migração na primeira implantação. O Wrangler registra migrações aplicadas para que não sejam executadas novamente em cada deploy. Mudanças futuras na estrutura devem entrar como novos arquivos SQL, preservando migrações já aplicadas.
+
+Na integração com o GitHub, configure no Cloudflare:
+
+| Campo | Valor |
+| --- | --- |
+| Branch de produção | main |
+| Diretório raiz | / |
+| Comando de build | npm run build |
+| Comando de implantação de produção | npm run deploy:cloudflare |
+
+O comando de produção aplica o banco e publica sem repetir a compilação feita na etapa anterior. Não use apenas `npx wrangler deploy` como comando de produção, pois isso não aplica as migrações. O token usado pelo Workers Builds precisa de permissão de edição do D1 deste projeto, além das permissões dos demais recursos utilizados.
+
+Para builds de branches de teste, não execute `deploy:cloudflare` contra o banco de produção. Use recursos isolados de teste. Enquanto não houver ambiente de teste separado, limite as branches de teste a `npm run build`, sem aplicar migrações remotas.
+
+O banco D1 já identificado em `wrangler.jsonc` precisa existir antes desse comando. A automação cria e atualiza as tabelas nesse banco e providencia o bucket R2 privado. Ela não habilita o serviço R2, não aceita termos de contratação e não configura a autenticação da conta. Se faltar habilitação ou permissão de acesso ao R2, a publicação interrompe com erro. O build vai para `dist`, e o Worker atende a interface e as rotas `/api/*`.
+
+## 4. Configurar o n8n
+
+```bash
+npx wrangler secret put N8N_WEBHOOK_URL
+npx wrangler secret put N8N_WEBHOOK_SECRET
+```
+
+Informe a URL HTTPS de produção e um segredo longo gerado para essa integração. Cadastre o mesmo segredo como credencial Header Auth no webhook n8n, usando o cabeçalho `X-NPE-Secret`. Esses valores não entram no GitHub.
+
+## 5. Conferir em produção
+
+Entre como administrador e crie uma pauta; entre com outro e-mail para testar a aprovação do acesso. Verifique calendário, upload/download no R2, abrir/salvar projeto do estúdio e uma geração real de texto. Use um fluxo n8n de teste que apenas registre a entrada antes de habilitar publicações reais. Verifique também que um visualizador não consegue gravar e que um editor não aprova conteúdo.
+
+O navegador de desenvolvimento Vite encaminha `/api` para `127.0.0.1:8787`. A prévia da interface funciona sem backend com `?preview=1`. Para testar autenticação real, utilize uma implantação protegida pelo Access; o projeto não aceita cabeçalhos de e-mail como substituto do JWT.
+
+## Backup e manutenção
+
+Defina uma rotina de backup/exportação do D1 e retenção do R2 antes do uso contínuo. Projetos e anexos são privados. A tabela `rate_limits` usa uma linha por usuário/minuto de uso de IA; remova registros antigos periodicamente. O painel lista até 1.000 conteúdos e 200 projetos nesta versão. A conta Cloudflare deve possuir cotas adequadas ao volume real de anexos e chamadas de IA.
+
+## Documentação oficial
+
+- https://developers.cloudflare.com/workers/wrangler/configuration/
+- https://developers.cloudflare.com/d1/reference/migrations/
+- https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+
+## Provisionamento automático do R2
+
+A criação remota do bucket depende de uma implantação autenticada na conta Cloudflare. O comando de teste `wrangler deploy --dry-run --x-provision` valida o empacotamento, mas não cria recursos remotos. O bucket continua privado por padrão; os arquivos são acessados pela API autenticada do aplicativo.
+
+Referência: https://developers.cloudflare.com/changelog/post/2025-10-24-automatic-resource-provisioning/
